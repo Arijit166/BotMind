@@ -2,30 +2,29 @@
 export function getConfig() {
   return {
     bot: {
-      // ✅ Corrected: Using environment variables for a personalized bot name
-      name: process.env.BOT_NAME || "Arijit's AI Assistant",
+      name: process.env.BOT_NAME || 'Arijit\'s AI Assistant',
       version: '1.0.0',
       owner: {
-        // ✅ Added: New owner information for personalization
         number: process.env.BOT_OWNER_NUMBER || '',
         name: process.env.BOT_OWNER_NAME || 'Arijit',
-        school: process.env.BOT_OWNER_SCHOOL || '', 
-        college: process.env.BOT_OWNER_COLLEGE || '',
-        residence: process.env.BOT_OWNER_RESIDENCE || '',
-        study_year: process.env.BOT_OWNER_STUDY_YEAR || ''
+        // 🟢 CORRECTED: Mapped all owner details from the .env file
+        school: process.env.BOT_OWNER_SCHOOL || 'Your School Name',
+        college: process.env.BOT_OWNER_COLLEGE || 'Your College Name',
+        residence: process.env.BOT_OWNER_RESIDENCE || 'Your City',
+        study_year: process.env.BOT_OWNER_STUDY_YEAR || 'Your Study Year',
       },
       personality: {
         description: "a helpful, friendly, and knowledgeable AI assistant",
         traits: [
           "helpful", "friendly", "knowledgeable", "concise",
-          "professional", "empathetic", "patient"
+          "professional", "empathetic",
+          "patient"
         ]
       }
     },
 
     whatsapp: {
-      // ✅ Corrected: Changed hardcoded session path to use an environment variable
-      sessionPath: process.env.SESSION_PATH || '.wwebjs_auth',
+      sessionPath: process.env.SESSION_PATH || './sessions',
       printQRInTerminal: true,
       defaultProtocolVersion: [2, 3000, 1015901307],
       connectTimeoutMs: 60000,
@@ -77,6 +76,7 @@ export function getConfig() {
 • /joke - Get a random joke
 • /fact - Get an interesting fact
 • /quote - Get an inspirational quote
+• /about - Learn about the bot and its owner
 
 *Owner Commands:*
 • /on - Activate the bot
@@ -105,9 +105,6 @@ Just send me a message and I'll respond using AI! In groups, mention me or use m
       mentionTriggers: ['bot', 'ai', 'assistant', 'help']
     },
 
-    // ❌ REMOVED THE TOP-LEVEL rateLimit OBJECT
-    // The rateLimit object is now only defined inside state.default
-
     state: {
       filePath: './data/bot-state.json',
       default: {
@@ -131,10 +128,10 @@ Just send me a message and I'll respond using AI! In groups, mention me or use m
           lastRestart: new Date().toISOString()
         },
         rateLimit: {
-          enabled: true, // 🟢 ADDED HERE 🟢
-          maxMessagesPerMinute: 10, // 🟢 ADDED HERE 🟢
-          maxMessagesPerHour: 100, // 🟢 ADDED HERE 🟢
-          cooldownMessages: [ // 🟢 ADDED HERE 🟢
+          enabled: true,
+          maxMessagesPerMinute: 10,
+          maxMessagesPerHour: 100,
+          cooldownMessages: [
             "🐌 Slow down there! Please wait a moment before sending another message.",
             "⏳ You're sending messages a bit too quickly. Take a breather!",
             "🛑 Hold on! Please wait a few seconds before your next message.",
@@ -164,11 +161,10 @@ Just send me a message and I'll respond using AI! In groups, mention me or use m
       enabled: true,
       maxMessagesPerChat: 100,
       maxContextLength: 20,
-      cleanupIntervalMs: 24 * 60 * 60 * 1000, // 24 hours
-      maxChatAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      cleanupIntervalMs: 24 * 60 * 60 * 1000,
+      maxChatAge: 7 * 24 * 60 * 60 * 1000
     }
   };
 }
 
-// Export a default function that returns the config
 export default getConfig;

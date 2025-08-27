@@ -1,93 +1,103 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'; // 🟢 Correct library name
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createModuleLogger } from '../utils/logger.js';
-// ❌ REMOVE the direct import of config to avoid circular dependencies
-// import config from '../../config.js';
 
 export class GeminiClient {
-    // 🟢 CORRECTED: Accept 'config' as a parameter in the constructor
-    constructor(config) {
-        this.config = config; // 🟢 Store the config object
-        this.logger = createModuleLogger('GeminiClient');
-        this.genAI = null;
-        this.model = null;
-        this.isInitialized = false;
-        this.requestCount = 0;
-        this.lastRequestTime = Date.now();
+  constructor(config) {
+    this.config = config;
+    this.logger = createModuleLogger('GeminiClient');
+    this.genAI = null;
+    this.model = null;
+    this.isInitialized = false;
+    this.requestCount = 0;
+    this.lastRequestTime = Date.now();
+  }
+
+  async initialize() {
+    try {
+      if (!this.config.gemini.apiKey) {
+        throw new Error('Gemini API key is required');
+      }
+
+      this.genAI = new GoogleGenerativeAI(this.config.gemini.apiKey);
+      this.model = this.genAI.getGenerativeModel({
+        model: this.config.gemini.model,
+        generationConfig: this.config.gemini.generationConfig,
+        safetySettings: this.config.gemini.safetySettings,
+      });
+
+      this.isInitialized = true;
+      this.logger.info('✅ Gemini client initialized successfully');
+      return true;
+    } catch (error) {
+      this.logger.error('❌ Gemini initialization failed', { error: error.message });
+      throw new Error('Gemini initialization failed: ' + error.message);
     }
+  }
 
-    /**
-     * Initialize Gemini AI client
-     */
-    async initialize() {
-        try {
-            // 🟢 CORRECTED: Access config from 'this.config'
-            if (!this.config.gemini.apiKey) {
-                throw new Error('Gemini API key is required');
-            }
+  // 🟢 CORRECTED: The generateResponse method now accepts 'prePrompt'
+  async generateResponse(userMessage, context = [], options = {}) {
+    try {
+      if (!this.isInitialized) {
+        throw new Error('Gemini client not initialized');
+      }
 
-            this.genAI = new GoogleGenerativeAI(this.config.gemini.apiKey);
-            this.model = this.genAI.getGenerativeModel({
-                model: this.config.gemini.model,
-                generationConfig: this.config.gemini.generationConfig,
-                safetySettings: this.config.gemini.safetySettings
-            });
+      this.checkRateLimit();
 
-            this.isInitialized = true;
-            this.logger.info('✅ Gemini AI client initialized successfully');
+      const { isGroup = false, contactName = 'User', prePrompt = '', maxLength = 1000 } = options;
+      
+      let finalPrompt = prePrompt;
+      
+      // Add conversation context if available
+      if (context.length > 0) {
+        finalPrompt += '\nRecent conversation context:\n';
+        context.forEach((msg) => {
+          const role = msg.fromMe ? this.config.bot.name : (msg.senderName || 'User');
+          finalPrompt += `[${new Date(msg.timestamp).toLocaleTimeString()}] ${role}: ${msg.body}\n`;
+        });
+      }
 
-        } catch (error) {
-            this.logger.error('❌ Failed to initialize Gemini AI:', error.message);
-            throw new Error(`Gemini initialization failed: ${error.message}`);
-        }
+      // Add current message
+      finalPrompt += `\nCurrent message from ${contactName}: ${userMessage}\n\n`;
+      
+      // Add response guidelines
+      finalPrompt += 'Please respond naturally and helpfully. Keep your response under ' + maxLength + ' characters.';
+      
+      if (isGroup) {
+        finalPrompt += ' Since this is a group chat, be concise and engaging.';
+      }
+
+      // Generate response
+      const result = await this.model.generateContent(finalPrompt);
+      const response = await result.response;
+      const text = response.text();
+
+      this.requestCount++;
+      this.lastRequestTime = Date.now();
+
+      const cleanedText = this.cleanResponse(text);
+
+      this.logger.info('🤖 Gemini response generated:', {
+        promptLength: finalPrompt.length,
+        responseLength: cleanedText.length,
+        requestCount: this.requestCount
+      });
+
+      return cleanedText;
+
+    } catch (error) {
+      this.logger.error('❌ Gemini generation failed:', error.message);
+      
+      if (error.message.includes('SAFETY')) {
+        return "🚫 I can't provide a response to that message due to safety guidelines. Please try rephrasing your question.";
+      } else if (error.message.includes('QUOTA')) {
+        return "⏳ I'm currently experiencing high demand. Please try again in a few moments.";
+      } else if (error.message.includes('RATE_LIMIT')) {
+        return "🐌 Please slow down! I need a moment to process your request.";
+      }
+      
+      return "❌ I'm having trouble generating a response right now. Please try again.";
     }
-
-    /**
-     * Generate response from Gemini
-     */
-    async generateResponse(prompt, context = [], options = {}) {
-        try {
-            if (!this.isInitialized) {
-                throw new Error('Gemini client not initialized');
-            }
-
-            // Rate limiting check
-            this.checkRateLimit();
-
-            // Build the complete prompt with context and personality
-            const fullPrompt = this.buildPrompt(prompt, context, options);
-
-            // Generate response
-            const result = await this.model.generateContent(fullPrompt);
-            const response = await result.response;
-            const text = response.text();
-
-            this.requestCount++;
-            this.lastRequestTime = Date.now();
-
-            const cleanedText = this.cleanResponse(text);
-
-            this.logger.info('🤖 Gemini response generated:', {
-                promptLength: fullPrompt.length,
-                responseLength: cleanedText.length,
-                requestCount: this.requestCount
-            });
-
-            return cleanedText;
-
-        } catch (error) {
-            this.logger.error('❌ Gemini generation failed:', error.message);
-            
-            if (error.message.includes('SAFETY')) {
-                return "🚫 I can't provide a response to that message due to safety guidelines. Please try rephrasing your question.";
-            } else if (error.message.includes('QUOTA')) {
-                return "⏳ I'm currently experiencing high demand. Please try again in a few moments.";
-            } else if (error.message.includes('RATE_LIMIT')) {
-                return "🐌 Please slow down! I need a moment to process your request.";
-            }
-            
-            return "❌ I'm having trouble generating a response right now. Please try again.";
-        }
-    }
+  }
 
     /**
      * Build complete prompt with context and personality
