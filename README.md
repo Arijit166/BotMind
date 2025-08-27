@@ -30,7 +30,7 @@ BotMind is a powerful, self-hosted WhatsApp bot that uses the Gemini AI model to
     npm install
     ```
 **Configure environment variables:**
-Rename .env.example to .env and fill in your details. You will need a Gemini API key.
+Create .env and fill in your details. You will need a Gemini API key.
 
 **Connect to WhatsApp:**
 Start the bot for the first time to generate the session files. You'll need to scan a QR code with your WhatsApp app.
@@ -42,6 +42,23 @@ Start the bot for the first time to generate the session files. You'll need to s
 Follow the on-screen instructions to link your WhatsApp account.
 **Remember:** this bot will use your personal phone number as its identity.
 
+## 🔑 Environment Variables
+
+Before running the bot, make sure to configure your `.env` file with the following variables:
+
+```env
+GEMINI_API_KEY
+BOT_OWNER_NUMBER
+BOT_NAME="WhatsApp AI Bot"
+BOT_OWNER_NAME
+LOG_LEVEL=info
+SESSION_PATH=./data/sessions
+BOT_OWNER_SCHOOL
+BOT_OWNER_COLLEGE
+BOT_OWNER_RESIDENCE
+BOT_OWNER_STUDY_YEAR
+```
+
 ## 🤖 Usage
 
 Once the bot is running, you can control it directly from your WhatsApp account:
@@ -52,28 +69,7 @@ Once the bot is running, you can control it directly from your WhatsApp account:
 
 Since the bot uses your personal phone number, you can issue these commands by messaging your own contact on WhatsApp.
 
-**⚠️ Important Note on Session Files**
 
-The bot stores its session information in a file to avoid re-scanning the QR code every time it starts. By default, this file is created in a .wwebjs_auth folder.
-
-To maintain portability, do not hardcode the session file path in config.js. Instead, use the .env file for configuration and refer to that variable in WhatsAppClient.js.
-
-For example, if you set the path in .env like this:
-
-```
-SESSION_PATH=./sessions
-Then in WhatsAppClient.js:
-```
-
-Then in WhatsAppClient.js
-```
-// Load session path from .env
-const sessionPath = process.env.SESSION_PATH || '.wwebjs_auth';
-
-// Use the session path
-session: new FileSession(sessionPath),
-```
-This ensures your bot works seamlessly on any operating system without manual code changes.
 
 ## 📜 License
 
