@@ -1,4 +1,7 @@
 // Dynamic configuration that reads environment variables at runtime
+// ❌ REMOVED: import { createModuleLogger } from '../utils/logger.js';
+// This file should not import the logger.
+
 export function getConfig() {
   return {
     bot: {
@@ -7,7 +10,6 @@ export function getConfig() {
       owner: {
         number: process.env.BOT_OWNER_NUMBER || '',
         name: process.env.BOT_OWNER_NAME || 'Arijit',
-        // 🟢 CORRECTED: Mapped all owner details from the .env file
         school: process.env.BOT_OWNER_SCHOOL || 'Your School Name',
         college: process.env.BOT_OWNER_COLLEGE || 'Your College Name',
         residence: process.env.BOT_OWNER_RESIDENCE || 'Your City',
@@ -102,7 +104,8 @@ Just send me a message and I'll respond using AI! In groups, mention me or use m
       enabled: true,
       respondOnlyWhenMentioned: true,
       maxGroupResponseLength: 800,
-      mentionTriggers: ['bot', 'ai', 'assistant', 'help']
+      mentionTriggers: ['bot', 'ai', 'assistant', 'help'],
+      alwaysPersonalizeInGroups: true,
     },
 
     state: {

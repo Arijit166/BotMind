@@ -1,9 +1,9 @@
-// src/handlers/group-handler.js
 import { createModuleLogger } from '../utils/logger.js';
 
 export class GroupHandler {
-  constructor(config, { gemini, historyManager, stateManager, botGuard, logger }) {
+  constructor(config, { whatsapp, gemini, historyManager, stateManager, botGuard, logger }) {
     this.config = config;
+    this.whatsappClient = whatsapp; // Store whatsappClient
     this.gemini = gemini;
     this.historyManager = historyManager;
     this.stateManager = stateManager;
@@ -14,6 +14,7 @@ export class GroupHandler {
     this.mentionTriggers = this.config.groups.mentionTriggers || [];
     this.maxResponseLength = this.config.groups.maxGroupResponseLength || 800;
     this.respondOnlyWhenMentioned = this.config.groups.respondOnlyWhenMentioned;
+    this.alwaysPersonalizeInGroups = this.config.groups.alwaysPersonalizeInGroups || false; 
   }
 
   /**
@@ -55,11 +56,12 @@ export class GroupHandler {
         return;
       }
 
-      // Check if bot should respond based on mention triggers
-      const shouldRespond = await this.shouldRespondToMessage(message, chat);
+      // Determine if bot should respond based on mention triggers
+      const shouldRespondExplicitly = await this.shouldRespondToMessage(message, chat);
       
-      if (!shouldRespond) {
-        this.logger.debug('Message does not trigger response', {
+      // If configured to respond only when mentioned, and it wasn't, then return
+      if (this.respondOnlyWhenMentioned && !shouldRespondExplicitly) {
+        this.logger.debug('Message does not trigger response and respondOnlyWhenMentioned is true', {
           from: message.from,
           group: groupName,
           messageText: messageText.substring(0, 50)
@@ -89,8 +91,7 @@ export class GroupHandler {
       }
 
       // Generate AI response for group
-      await this.generateAndSendGroupResponse(message, chat, contact, messageText);
-
+      await this.generateAndSendGroupResponse(message, chat, contact, messageText, shouldRespondExplicitly);
     } catch (error) {
       this.logger.error('Error handling group message', {
         error: error.message,
@@ -218,7 +219,7 @@ export class GroupHandler {
   async shouldRespondToMessage(message, chat) {
     try {
       const messageText = message.body?.trim().toLowerCase() || '';
-      
+      
       if (!this.respondOnlyWhenMentioned) {
         // If configured to respond to all messages, return true
         return true;
@@ -226,11 +227,16 @@ export class GroupHandler {
 
       // Check for direct mentions (@number)
       if (message.mentionedIds && message.mentionedIds.length > 0) {
-        const ownerWAId = `${this.config.bot.owner.number}@c.us`;
-        const isMentioned = message.mentionedIds.some(id => id === ownerWAId);
+        const ownerPhoneNumber = this.config.bot.owner.number; // Get the owner's phone number
+        
+        // Extract just the number part from mentioned JIDs for comparison
+        const isMentioned = message.mentionedIds.some(mentionedJid => {
+          const mentionedNumber = mentionedJid.split('@')[0];
+          return mentionedNumber === ownerPhoneNumber;
+        });
         
         if (isMentioned) {
-          this.logger.debug('Bot mentioned directly', {
+          this.logger.debug('Bot mentioned directly by number/username', {
             from: message.from,
             mentionedIds: message.mentionedIds
           });
@@ -288,7 +294,7 @@ export class GroupHandler {
   /**
    * Generate and send AI response in group
    */
-  async generateAndSendGroupResponse(message, chat, contact, messageText) {
+  async generateAndSendGroupResponse(message, chat, contact, messageText, shouldRespondExplicitly) { // 🟢 Added shouldRespondExplicitly
     try {
       const contactName = contact.pushname || contact.name || 'User';
       const groupName = chat.name || 'Group';
@@ -315,11 +321,17 @@ export class GroupHandler {
         cleanMessageText = messageText;
       }
 
+      // 🟢 CONDITIONAL PRE-PROMPT: Only add personalization if explicitly mentioned/triggered
+      const prePrompt = shouldRespondExplicitly || this.config.groups.alwaysPersonalizeInGroups 
+                          ? this.createPersonalizationPrompt() 
+                          : ''; // 🟢 Use the new config setting
+
       // Generate response using Gemini with group-specific options
-      const aiResponse = await this.gemini.generateResponse(cleanMessageText, context, {
+      const aiResponse = await this.gemini.generateResponse(cleanMessageText, context, {
         isGroup: true,
         contactName,
         groupName,
+        prePrompt, // 🟢 PASS THE PRE-PROMPT TO GEMINI
         maxLength: this.maxResponseLength
       });
 
@@ -378,6 +390,26 @@ export class GroupHandler {
         });
       }
     }
+  }
+
+  /**
+   * 🟢 ADDED: New method to create a personalized pre-prompt
+   */
+  createPersonalizationPrompt() {
+    const owner = this.config.bot.owner;
+    return `
+You are an AI assistant and companion named ${this.config.bot.name}.
+Your primary role is to be a helpful and friendly companion.
+Your owner is named ${owner.name}.
+You know the following information about your owner:
+- Owner's Name: ${owner.name}
+- Owner's School: ${owner.school}
+- Owner's College: ${owner.college}
+- Owner's Residence: ${owner.residence}
+- Owner's Year of Study: ${owner.study_year}
+
+When the user asks about your owner, use this information to provide a detailed and accurate response. Do not invent details that are not provided.
+    `.trim();
   }
 
   /**
