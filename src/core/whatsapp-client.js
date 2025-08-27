@@ -7,9 +7,9 @@ import {
   Browsers,
   isJidBroadcast
 } from '@whiskeysockets/baileys';
-import qrcode from 'qrcode'; // 🟢 Changed from 'qrcode-terminal' to 'qrcode'
+import qrcodeTerminal from 'qrcode-terminal'; // 🟢 Changed to qrcode-terminal
 import fs from 'fs/promises';
-import path from 'path'; // 🟢 Import path module
+import path from 'path';
 import { createModuleLogger } from '../utils/logger.js';
 
 export class WhatsAppClient {
@@ -26,6 +26,8 @@ export class WhatsAppClient {
     this.reconnectAttempts = 0;
     this.connectionEventHandlers = new Map();
     this.messageHandlers = new Set();
+    // ❌ REMOVED: Imgur Client ID is no longer needed for terminal QR
+    // this.imgurClientId = process.env.IMGUR_CLIENT_ID; 
   }
 
   /**
@@ -146,7 +148,7 @@ export class WhatsAppClient {
   /**
    * Handle QR code generation
    */
-  async handleQRCode(qr) { // 🟢 Made async to use await for file operations
+  async handleQRCode(qr) {
     this.qrRetries++;
     
     this.logger.bot.qrCode(this.qrRetries, this.config.whatsapp.qrMaxRetries);
@@ -157,38 +159,38 @@ export class WhatsAppClient {
       return;
     }
 
-    // 🟢 NEW: Generate QR code as a PNG image file
-    const qrFilePath = path.join(this.config.whatsapp.sessionPath, `qrcode_attempt_${this.qrRetries}.png`);
-    try {
-      await qrcode.toFile(qrFilePath, qr, {
-        errorCorrectionLevel: 'H', // High error correction
-        type: 'png',
-        quality: 0.92,
-        margin: 1,
-        color: {
-          dark: '#000',  // Black dots
-          light: '#FFF' // White background
-        }
-      });
-      this.logger.info(`✅ QR code saved to ${qrFilePath}`);
-      this.logger.info(`Scan the QR code from the file: ${qrFilePath}`);
-      console.log(`\nScan the QR code from the file: ${qrFilePath}\n`);
-    } catch (error) {
-      this.logger.error('❌ Failed to save QR code as image:', error);
-      // Fallback to terminal display if file save fails
-      // 🟢 REVERTED: Fallback to qrcode-terminal if file save fails
-      qrcodeTerminal.generate(qr, { small: true });
-    }
+    // 🟢 REVERTED: Display QR code in terminal using qrcode-terminal
+    console.log('\n' + '='.repeat(50));
+    console.log('📱 WHATSAPP QR CODE');
+    console.log('='.repeat(50));
+    console.log('Scan this QR code with your WhatsApp mobile app:');
+    console.log('1. Open WhatsApp on your phone');
+    console.log('2. Go to Settings > Linked Devices');
+    console.log('3. Tap "Link a Device"');
+    console.log('4. Scan the QR code below');
+    console.log('='.repeat(50));
+
+    qrcodeTerminal.generate(qr, { small: true }, (qrString) => {
+      console.log(qrString);
+      console.log('='.repeat(50));
+      console.log(`QR Code attempt: ${this.qrRetries}/${this.config.whatsapp.qrMaxRetries}`);
+      console.log('Waiting for scan...');
+      console.log('='.repeat(50) + '\n');
+    });
+
+    // ❌ REMOVED: QR code file saving functionality and Imgur upload
+    // The qrFilePath and qrcode.toFile logic has been removed.
+    // The Imgur upload logic has been removed.
 
     // Emit QR event for external handlers
-    this.emitConnectionEvent('qr', { qr, attempt: this.qrRetries, filePath: qrFilePath });
+    this.emitConnectionEvent('qr', { qr, attempt: this.qrRetries, filePath: null }); // filePath is now null
   }
 
   /**
    * 🟢 NEW: Handle pairing code generation (Link with Phone Number)
    */
   async handlePairingCode(code) {
-    this.qrRetries++; // Use qrRetries for pairing code attempts as well
+    this.qrRetries++;
     this.logger.bot.qrCode(this.qrRetries, this.config.whatsapp.qrMaxRetries);
 
     if (this.qrRetries > this.config.whatsapp.qrMaxRetries) {
@@ -206,7 +208,7 @@ export class WhatsAppClient {
     console.log('3. Tap "Link with phone number"');
     console.log('4. Enter the 8-digit code below:');
     console.log('='.repeat(50));
-    console.log(`\nYour 8-digit pairing code is: ${code}`); // 🟢 Display the code directly
+    console.log(`\nYour 8-digit pairing code is: ${code}`);
     console.log('='.repeat(50));
     console.log(`Pairing code attempt: ${this.qrRetries}/${this.config.whatsapp.qrMaxRetries}`);
     console.log('Waiting for pairing...');
