@@ -1,6 +1,6 @@
 /**
  * @fileoverview Main Bot class that handles WhatsApp message processing and interaction with the Gemini API.
- * @version 1.0.0
+ * @version 1.0.1
  * @author Your Name <your.email@example.com>
  */
 
@@ -10,6 +10,7 @@ import { GeminiClient } from './services/gemini-client.js';
 import { BotStateManager } from './core/state-manager.js';
 import { HistoryManager } from './services/history-manager.js';
 import { BotGuard } from './services/bot-guard.js';
+// 🟢 CORRECTED: Use the new MessageHandler
 import { MessageHandler } from './handlers/message-handler.js';
 import { GroupHandler } from './handlers/group-handler.js';
 import { createModuleLogger } from './utils/logger.js';
@@ -86,9 +87,9 @@ export class Bot {
 
             // Initialize message handlers, passing the necessary components
             this.logger.info('💬 Initializing message handlers...');
+            // 🟢 CORRECTED: Re-order parameters to match the new MessageHandler constructor
             this.messageHandler = new MessageHandler(
                 this.config,
-                this.whatsappClient,
                 this.geminiClient,
                 this.historyManager,
                 this.stateManager,
