@@ -324,9 +324,6 @@ export class WhatsAppClient {
           continue;
         }
 
-        // Skip if message is from bot itself
-        if (message.key.fromMe) continue;
-
         // Skip broadcast messages
         if (isJidBroadcast(message.key.remoteJid)) continue;
 

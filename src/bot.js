@@ -14,6 +14,7 @@ import { MessageHandler } from './handlers/message-handler.js';
 import { GroupHandler } from './handlers/group-handler.js';
 import { createModuleLogger } from './utils/logger.js';
 import { getConfig } from '../config.js';
+import process from 'process';
 
 /**
  * Main class for the WhatsApp bot.
@@ -86,25 +87,18 @@ export class Bot {
 
             // Initialize message handlers, passing the necessary components
             this.logger.info('💬 Initializing message handlers...');
-            this.messageHandler = new MessageHandler(
-                this.config,
-                this.geminiClient,
-                this.historyManager,
-                this.stateManager,
-                this.botGuard,
-                this.logger
-            );
-            this.groupHandler = new GroupHandler(
-                this.config,
-                {
-                    whatsapp: this.whatsappClient,
-                    gemini: this.geminiClient,
-                    historyManager: this.historyManager,
-                    stateManager: this.stateManager,
-                    botGuard: this.botGuard,
-                    logger: this.logger
-                }
-            );
+            const handlerDependencies = {
+                whatsapp: this.whatsappClient,
+                gemini: this.geminiClient,
+                historyManager: this.historyManager,
+                stateManager: this.stateManager,
+                botGuard: this.botGuard,
+                logger: this.logger,
+                bot: this // Pass the bot instance itself
+            };
+
+            this.messageHandler = new MessageHandler(this.config, handlerDependencies);
+            this.groupHandler = new GroupHandler(this.config, handlerDependencies);
 
             this.isInitialized = true;
             this.logger.info('✅ Bot initialization completed successfully');
@@ -190,13 +184,19 @@ export class Bot {
             this.isRunning = false;
             this.isShuttingDown = false;
             this.logger.info('✅ Bot shutdown completed');
+            
+            // Terminate the Node.js process to prevent auto-restart
+            this.logger.info('Exiting process gracefully...');
+            process.exit(0);
 
         } catch (error) {
             this.logger.error('❌ Error during bot shutdown:', error);
-            throw error;
+            // Terminate the process with an error code if something goes wrong
+            this.logger.error('Exiting process with error code 1');
+            process.exit(1);
         }
     }
-
+    
     /**
      * Setup WhatsApp client event handlers
      */
@@ -315,14 +315,11 @@ export class Bot {
                 hasMedia: this.hasMedia(message),
                 hasQuotedMsg: !!message.message?.extendedTextMessage?.contextInfo?.quotedMessage,
                 mentionedIds: message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [],
-                reply: async (text) => {
-                    return await this.whatsappClient.sendMessage(message.key.remoteJid, { text });
+                reply: async (content) => {
+                    return await this.whatsappClient.sendMessage(message.key.remoteJid, content);
                 }
             };
-
-            // Increment message count
-            await this.stateManager.incrementMessageCount();
-
+            
             // Route to appropriate handler
             if (chat.isGroup) {
                 await this.groupHandler.handleMessage(internalMessage, chat, contact);
@@ -349,16 +346,16 @@ export class Bot {
             }
 
             const ownerJid = `${this.config.bot.owner.number}@s.whatsapp.net`;
-            const botStats = this.stateManager.getStatistics();
+            const state = this.stateManager.getState();
             
             const message = `🤖 *${this.config.bot.name} Started*
 
 ✅ Bot is now online and ready!
 📱 Connected as: ${user?.name || user?.id || 'Unknown'}
-🔋 Status: ${botStats.isActive ? '🟢 ACTIVE' : '🔴 INACTIVE'}
+🔋 Status: ${state.isActive ? '🟢 ACTIVE' : '🔴 INACTIVE'}
 ⏰ Started: ${new Date().toLocaleString()}
 
-${!botStats.isActive ? '💡 Use */on* to activate the bot' : ''}
+${!state.isActive ? '💡 Use */on* to activate the bot' : ''}
 
 Type */help* for available commands.`;
 
@@ -494,7 +491,6 @@ Type */help* for available commands.`;
      */
     getStatus() {
         try {
-            // Use this.config to access properties
             const config = this.config;
             const whatsappStatus = this.whatsappClient?.getStatus() || { connected: false };
             const botState = this.stateManager?.getState() || { isActive: false };
