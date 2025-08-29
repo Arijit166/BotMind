@@ -41,97 +41,89 @@ async function connectToDatabase() {
 }
 
 async function useDatabaseAuthState() {
-  // Check for a valid pool before proceeding
-  if (!pool) {
-    throw new Error('Database is not available. Cannot use database for authentication state.');
-  }
+    // Check for a valid pool before proceeding
+    if (!pool) {
+        throw new Error('Database is not available. Cannot use database for authentication state.');
+    }
 
-  let client;
-  try {
-    client = await pool.connect();
-    console.log('DB: Successfully connected to PostgreSQL client.');
+    let client;
+    try {
+        client = await pool.connect();
+        console.log('DB: Successfully connected to PostgreSQL client.');
 
-    const tableCheckQuery = `
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'whatsapp_auth_creds'
-      );
-    `;
-    const tableExistsResult = await client.query(tableCheckQuery);
+        // Re-typed the query to prevent invisible character issues.
+        const tableCheckQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'whatsapp_auth_creds');`;
+        
+        const tableExistsResult = await client.query(tableCheckQuery);
 
-    if (!tableExistsResult?.rows?.[0]?.exists) {
-      console.log('DB: whatsapp_auth_creds table does not exist. Creating it...');
-      const createTableQuery = `
-        CREATE TABLE whatsapp_auth_creds (
-          id VARCHAR(255) PRIMARY KEY,
-          value JSONB
-        );
-      `;
-      await client.query(createTableQuery);
-      console.log('DB: Created whatsapp_auth_creds table.');
-    } else {
-      console.log('DB: whatsapp_auth_creds table already exists.');
-    }
+        if (!tableExistsResult?.rows?.[0]?.exists) {
+            console.log('DB: whatsapp_auth_creds table does not exist. Creating it...');
+            // Re-typed the query
+            const createTableQuery = `CREATE TABLE whatsapp_auth_creds (id VARCHAR(255) PRIMARY KEY, value JSONB);`;
+            await client.query(createTableQuery);
+            console.log('DB: Created whatsapp_auth_creds table.');
+        } else {
+            console.log('DB: whatsapp_auth_creds table already exists.');
+        }
 
-    const readCreds = async (id) => {
-      const res = await client.query('SELECT value FROM whatsapp_auth_creds WHERE id = $1', [id]);
-      return res.rows.length === 0 ? null : res.rows[0].value;
-    };
+        const readCreds = async (id) => {
+            // Re-typed the query
+            const res = await client.query('SELECT value FROM whatsapp_auth_creds WHERE id = $1', [id]);
+            return res.rows.length === 0 ? null : res.rows[0].value;
+        };
 
-    const writeCreds = async (id, value) => {
-      const query = `
-        INSERT INTO whatsapp_auth_creds (id, value) VALUES ($1, $2)
-        ON CONFLICT (id) DO UPDATE SET value = $2;
-      `;
-      await client.query(query, [id, value]);
-    };
+        const writeCreds = async (id, value) => {
+            // Re-typed the query
+            const query = `INSERT INTO whatsapp_auth_creds (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value = $2;`;
+            await client.query(query, [id, value]);
+        };
 
-    const getCreds = async () => {
-      const res = await client.query('SELECT value FROM whatsapp_auth_creds WHERE id = $1', ['creds']);
-      if (res.rows.length === 0) return {};
-      try {
-        return JSON.parse(res.rows[0].value);
-      } catch (jsonError) {
-        console.error('DB: Failed to parse main credentials JSON:', jsonError);
-        return {};
-      }
-    };
+        const getCreds = async () => {
+            // Re-typed the query
+            const res = await client.query('SELECT value FROM whatsapp_auth_creds WHERE id = $1', ['creds']);
+            if (res.rows.length === 0) return {};
+            try {
+                return JSON.parse(res.rows[0].value);
+            } catch (jsonError) {
+                console.error('DB: Failed to parse main credentials JSON:', jsonError);
+                return {};
+            }
+        };
 
-    const authState = {
-      creds: await getCreds(),
-      keys: {
-        get: async (type, ids) => {
-          const map = {};
-          const results = await Promise.all(ids.map(id => readCreds(`${type}_${id}`)));
-          results.forEach((data, index) => {
-            if (data) map[ids[index]] = new Uint8Array(data.data);
-          });
-          return map;
-        },
-        set: async (data) => {
-          const tasks = [];
-          for (const type of Object.keys(data)) {
-            for (const id of Object.keys(data[type])) {
-              const value = data[type][id];
-              tasks.push(writeCreds(`${type}_${id}`, Buffer.from(value)));
-            }
-          }
-          await Promise.all(tasks);
-        }
-      }
-    };
-    
-    const saveCreds = async () => await writeCreds('creds', JSON.stringify(authState.creds));
+        const authState = {
+            creds: await getCreds(),
+            keys: {
+                get: async (type, ids) => {
+                    const map = {};
+                    const results = await Promise.all(ids.map(id => readCreds(`${type}_${id}`)));
+                    results.forEach((data, index) => {
+                        if (data) map[ids[index]] = new Uint8Array(data.data);
+                    });
+                    return map;
+                },
+                set: async (data) => {
+                    const tasks = [];
+                    for (const type of Object.keys(data)) {
+                        for (const id of Object.keys(data[type])) {
+                            const value = data[type][id];
+                            tasks.push(writeCreds(`${type}_${id}`, Buffer.from(value)));
+                        }
+                    }
+                    await Promise.all(tasks);
+                }
+            }
+        };
 
-    console.log('DB: useDatabaseAuthState function completed successfully.');
-    return { state: authState, saveCreds };
-  } catch (error) {
-    console.error('DB: Error in useDatabaseAuthState:', error);
-    throw error;
-  } finally {
-    if (client) client.release();
-  }
+        const saveCreds = async () => await writeCreds('creds', JSON.stringify(authState.creds));
+
+        console.log('DB: useDatabaseAuthState function completed successfully.');
+        return { state: authState, saveCreds };
+    } catch (error) {
+        console.error('DB: Error in useDatabaseAuthState:', error);
+        throw error;
+    } finally {
+        if (client) client.release();
+    }
 }
 
 export class WhatsAppClient {
