@@ -1,0 +1,35 @@
+{
+  "isActive": false,
+  "lastToggled": "2025-08-29T16:01:03.173Z",
+  "toggledBy": "916289610827",
+  "totalMessages": 0,
+  "activeSince": "2025-08-29T15:47:26.992Z",
+  "version": "1.0.0",
+  "settings": {
+    "respondToGroups": true,
+    "mentionRequired": true,
+    "maxResponseLength": 1000,
+    "typingIndicator": true
+  },
+  "statistics": {
+    "privateChats": 0,
+    "groupChats": 0,
+    "commandsProcessed": 0,
+    "errorsEncountered": 0,
+    "lastRestart": "2025-08-29T15:47:26.992Z"
+  },
+  "rateLimit": {
+    "enabled": true,
+    "maxMessagesPerMinute": 10,
+    "maxMessagesPerHour": 100,
+    "cooldownMessages": [
+      "🐌 Slow down there! Please wait a moment before sending another message.",
+      "⏳ You're sending messages a bit too quickly. Take a breather!",
+      "🛑 Hold on! Please wait a few seconds before your next message.",
+      "💨 Whoa, slow down! Let's chat at a more relaxed pace."
+    ],
+    "lastReset": "2025-08-29T15:47:26.992Z",
+    "requestCounts": {}
+  },
+  "lastSaved": "2025-08-29T16:01:04.216Z"
+}
