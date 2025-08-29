@@ -199,20 +199,22 @@ export class WhatsAppClient {
       return;
     }
 
-    console.log('\n' + '='.repeat(50));
-    console.log('🔢 WHATSAPP PAIRING CODE');
-    console.log('='.repeat(50));
-    console.log('Use this code to link your WhatsApp mobile app:');
-    console.log('1. Open WhatsApp on your phone');
-    console.log('2. Go to Settings > Linked Devices');
-    console.log('3. Tap "Link with phone number"');
-    console.log('4. Enter the 8-digit code below:');
-    console.log('='.repeat(50));
-    console.log(`\nYour 8-digit pairing code is: ${code}`);
-    console.log('='.repeat(50));
-    console.log(`Pairing code attempt: ${this.qrRetries}/${this.config.whatsapp.qrMaxRetries}`);
-    console.log('Waiting for pairing...');
-    console.log('='.repeat(50) + '\n');
+    // Instead of ASCII QR, print a link to an online QR generator
+    console.log('\n' + '='.repeat(50));
+    console.log('📱 WHATSAPP QR CODE');
+    console.log('='.repeat(50));
+    console.log('Scan this QR code with your WhatsApp mobile app:');
+    console.log('1. Open WhatsApp on your phone');
+    console.log('2. Go to Settings > Linked Devices');
+    console.log('3. Tap "Link a Device"');
+    console.log('4. Open the link below in a browser and scan it:');
+    console.log('='.repeat(50));
+    console.log(`👉 https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(qr)}`);
+    console.log('='.repeat(50));
+    console.log(`QR Code attempt: ${this.qrRetries}/${this.config.whatsapp.qrMaxRetries}`);
+    console.log('Waiting for scan...');
+    console.log('='.repeat(50) + '\n');
+
 
     // Emit pairing code event for external handlers
     this.emitConnectionEvent('pairing_code', { code, attempt: this.qrRetries });
