@@ -269,7 +269,7 @@ export class WhatsAppClient {
     };
   }
 
-  async connect() {
+    async connect() {
     if (this.isConnecting) {
       this.logger.warn('Connection already in progress');
       return;
@@ -284,41 +284,88 @@ export class WhatsAppClient {
       this.isConnecting = true;
       this.logger.info('🔗 Initializing WhatsApp connection...');
 
+      // Enhanced debugging for cloud deployment
+      console.log('\n🔍 CONNECTION DEBUG INFO:');
+      console.log('Platform:', process.env.RENDER ? 'Render Cloud' : 'Local');
+      console.log('Node version:', process.version);
+      console.log('Environment:', process.env.NODE_ENV || 'development');
+      console.log('Database available:', !!pool);
+      console.log('Memory usage:', process.memoryUsage());
+
       const { version, isLatest } = await fetchLatestBaileysVersion();
       this.logger.info(`📱 Using WhatsApp Web v${version.join('.')}, isLatest: ${isLatest}`);
 
-      // Try database auth state, fallback to memory
+      // Enhanced auth state handling with detailed logging
       let authState, saveCreds;
       try {
         ({ state: authState, saveCreds } = await useDatabaseAuthState());
+        console.log('✅ Database auth state loaded');
+        console.log('Auth state has creds:', !!authState.creds && Object.keys(authState.creds).length > 0);
         this.logger.info('✅ Using database for WhatsApp authentication state');
       } catch (error) {
+        console.log('❌ Database auth failed, using memory-only state:', error.message);
         this.logger.warn('⚠️ Database auth failed, using memory-only state:', error.message);
-        // Fallback to memory-only auth state
-        authState = { creds: {}, keys: { get: async () => ({}), set: async () => {} } };
-        saveCreds = () => Promise.resolve();
+        
+        // Enhanced fallback auth state
+        authState = { 
+          creds: {},
+          keys: { 
+            get: async (type, ids) => {
+              console.log(`🔑 Memory auth: Getting ${type} keys for ${ids.length} items`);
+              return {};
+            },
+            set: async (data) => {
+              const keyCount = Object.values(data).reduce((sum, typeData) => sum + Object.keys(typeData).length, 0);
+              console.log(`🔑 Memory auth: Setting ${keyCount} keys`);
+            }
+          }
+        };
+        saveCreds = () => {
+          console.log('💾 Memory auth: Credentials save requested (no-op)');
+          return Promise.resolve();
+        };
       }
 
-      this.sock = makeWASocket({
+      // Enhanced socket configuration with debugging
+      console.log('🔧 Creating WhatsApp socket...');
+      const socketConfig = {
         version,
         logger: this.createBaileysLogger(),
-        printQRInTerminal: false,
+        printQRInTerminal: false, // We handle QR manually
         auth: {
           creds: authState.creds,
           keys: makeCacheableSignalKeyStore(authState.keys, this.createBaileysLogger())
         },
         browser: Browsers.ubuntu("Chrome"),
-        connectTimeoutMs: this.config.whatsapp.connectTimeoutMs,
-        defaultQueryTimeoutMs: undefined,
+        connectTimeoutMs: this.config.whatsapp.connectTimeoutMs || 60000,
+        defaultQueryTimeoutMs: this.config.whatsapp.queryTimeoutMs || 60000,
         keepAliveIntervalMs: 10000,
         generateHighQualityLinkPreview: true,
         syncFullHistory: false,
-        markOnlineOnConnect: true
+        markOnlineOnConnect: true,
+        // Enhanced options for cloud deployment
+        retryRequestDelayMs: 250,
+        maxMsgRetryCount: 5,
+        appStateMacVerification: {
+          patch: true,
+          snapshot: true
+        }
+      };
+
+      console.log('Socket config:', {
+        hasAuth: !!socketConfig.auth,
+        hasCreds: !!socketConfig.auth.creds,
+        connectTimeout: socketConfig.connectTimeoutMs,
+        browser: socketConfig.browser
       });
 
+      this.sock = makeWASocket(socketConfig);
+
+      // Enhanced event setup with more detailed logging
       this.setupEventHandlers(saveCreds);
 
       this.logger.info('✅ WhatsApp client initialized successfully');
+      console.log('✅ Socket created, waiting for connection events...\n');
 
     } catch (error) {
       this.isConnecting = false;
@@ -327,146 +374,297 @@ export class WhatsAppClient {
         stack: error.stack,
         name: error.name
       });
+      
+      console.error('\n❌ FULL CONNECTION ERROR DETAILS:');
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Error code:', error.code);
+      console.error('Stack trace:', error.stack?.split('\n').slice(0, 5).join('\n'));
+      
       throw error;
     }
   }
 
+  // Enhanced event handler setup with detailed connection logging
   setupEventHandlers(saveCreds) {
-    if (!this.sock) return;
+    if (!this.sock) {
+      console.error('❌ No socket available for event handlers');
+      return;
+    }
+
+    console.log('🔧 Setting up WhatsApp event handlers...');
+
+    // Enhanced connection update handler with detailed debugging
     this.sock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr, code } = update;
-      this.logger.debug('Connection update received:', { connection, qr: !!qr, code: !!code });
+      const { connection, lastDisconnect, qr, code, isNewLogin, isOnline, receivedPendingNotifications } = update;
+      
+      // Detailed connection logging
+      console.log('\n📡 CONNECTION UPDATE RECEIVED:');
+      console.log('├─ Connection state:', connection);
+      console.log('├─ Has QR code:', !!qr);
+      console.log('├─ Has pairing code:', !!code);
+      console.log('├─ Is new login:', isNewLogin);
+      console.log('├─ Is online:', isOnline);
+      console.log('├─ Received pending notifications:', receivedPendingNotifications);
+      console.log('├─ Has disconnect info:', !!lastDisconnect);
+      
+      if (lastDisconnect) {
+        console.log('├─ Disconnect error exists:', !!lastDisconnect.error);
+        console.log('├─ Disconnect reason code:', lastDisconnect.error?.output?.statusCode);
+        console.log('├─ Disconnect error message:', lastDisconnect.error?.message);
+      }
+      console.log('└─ Timestamp:', new Date().toISOString());
+
+      this.logger.debug('Connection update received:', { 
+        connection, 
+        qr: !!qr, 
+        code: !!code,
+        isNewLogin,
+        isOnline,
+        receivedPendingNotifications,
+        disconnectReason: lastDisconnect?.error?.output?.statusCode
+      });
 
       if (qr) {
-        this.handleQRCode(qr);
+        console.log('📱 QR CODE GENERATED');
+        await this.handleQRCode(qr);
       } else if (code) {
-        this.handlePairingCode(code);
+        console.log('🔢 PAIRING CODE GENERATED');
+        await this.handlePairingCode(code);
       }
 
       if (connection === 'close') {
+        console.log('🔌 CONNECTION CLOSED');
         await this.handleDisconnection(lastDisconnect);
       } else if (connection === 'open') {
+        console.log('✅ CONNECTION OPENED');
         await this.handleConnection();
       } else if (connection === 'connecting') {
+        console.log('🔄 CONNECTION IN PROGRESS');
         this.logger.info('🔄 Connecting to WhatsApp...');
+      } else {
+        console.log('❓ UNKNOWN CONNECTION STATE:', connection);
       }
     });
 
-    this.sock.ev.on('creds.update', saveCreds);
+    // Enhanced credentials update handler
+    this.sock.ev.on('creds.update', async () => {
+      console.log('🔐 CREDENTIALS UPDATED - saving to database');
+      try {
+        await saveCreds();
+        console.log('✅ Credentials saved successfully');
+      } catch (error) {
+        console.error('❌ Failed to save credentials:', error.message);
+      }
+    });
 
+    // Enhanced message handler
     this.sock.ev.on('messages.upsert', async (m) => {
+      console.log('📨 Messages received:', m.messages?.length || 0);
       await this.handleMessages(m);
     });
 
+    // Additional event handlers for debugging
     this.sock.ev.on('presence.update', (update) => {
-      this.logger.debug('Presence update:', update);
+      console.log('👤 Presence update:', Object.keys(update).length, 'contacts');
     });
 
-    this.sock.ev.on('groups.upsert', (groups) => {
-      this.logger.debug('Groups upserted:', groups.length);
+    this.sock.ev.on('chats.set', (chats) => {
+      console.log('💬 Chats set:', chats.chats?.length || 0, 'chats');
     });
 
-    this.sock.ev.on('contacts.upsert', (contacts) => {
-      this.logger.debug('Contacts upserted:', contacts.length);
+    this.sock.ev.on('contacts.set', (contacts) => {
+      console.log('📞 Contacts set:', contacts.contacts?.length || 0, 'contacts');
     });
+
+    // Error event handler
+    this.sock.ev.on('connection.error', (error) => {
+      console.error('🚨 CONNECTION ERROR EVENT:', error);
+    });
+
+    console.log('✅ Event handlers configured\n');
   }
 
+  // Enhanced QR code handling with better cloud deployment support
   async handleQRCode(qr) {
     this.qrRetries++;
-    this.logger.bot.qrCode(this.qrRetries, this.config.whatsapp.qrMaxRetries);
+    this.currentQR = qr;
+    
+    console.log('\n' + '='.repeat(80));
+    console.log('📱 WHATSAPP QR CODE GENERATED');
+    console.log('='.repeat(80));
+    console.log(`🔢 Attempt: ${this.qrRetries}/${this.config.whatsapp.qrMaxRetries}`);
+    console.log('⏰ QR Code expires in ~20 seconds');
+    console.log('');
 
     if (this.qrRetries > this.config.whatsapp.qrMaxRetries) {
+      console.log('❌ Maximum QR retries exceeded');
       this.logger.error('❌ Maximum QR retries exceeded');
       this.disconnect();
       return;
     }
 
-    console.log('\n' + '='.repeat(50));
-    console.log('📱 WHATSAPP QR CODE');
-    console.log('='.repeat(50));
-    console.log('Scan this QR code with your WhatsApp mobile app:');
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qr)}`;
+    
+    console.log('🌐 FOR CLOUD DEPLOYMENT - COPY THIS URL:');
+    console.log(`👉 ${qrUrl}`);
+    console.log('');
+    console.log('📋 INSTRUCTIONS:');
+    console.log('1. Copy the URL above');
+    console.log('2. Paste it in your browser');
+    console.log('3. Scan the QR code with WhatsApp');
+    console.log('4. Go to WhatsApp > Settings > Linked Devices > Link a Device');
+    console.log('='.repeat(80) + '\n');
+
+    this.logger.bot?.qrCode?.(this.qrRetries, this.config.whatsapp.qrMaxRetries);
+    this.emitConnectionEvent('qr', { qr, qrUrl, attempt: this.qrRetries });
+  }
+
+  // Enhanced pairing code handler (alternative to QR)
+  async handlePairingCode(code) {
+    console.log('\n' + '='.repeat(80));
+    console.log('🔢 WHATSAPP PAIRING CODE GENERATED');
+    console.log('='.repeat(80));
+    console.log(`📱 Pairing Code: ${code}`);
+    console.log('');
+    console.log('📋 INSTRUCTIONS:');
     console.log('1. Open WhatsApp on your phone');
     console.log('2. Go to Settings > Linked Devices');
     console.log('3. Tap "Link a Device"');
-    console.log('4. Open the link below in a browser and scan it');
-    console.log('='.repeat(50));
-    console.log(`👉 Clickable QR link: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
-    console.log('='.repeat(50));
-    console.log(`QR Code attempt: ${this.qrRetries}/${this.config.whatsapp.qrMaxRetries}`);
-    console.log('Waiting for scan...');
-    console.log('='.repeat(50) + '\n');
-    this.emitConnectionEvent('qr', { qr, attempt: this.qrRetries, filePath: null });
+    console.log('4. Choose "Link with phone number instead"');
+    console.log(`5. Enter this code: ${code}`);
+    console.log('='.repeat(80) + '\n');
   }
 
-  async handleConnection() {
-    try {
-      this.isConnected = true;
-      this.isConnecting = false;
-      this.qrRetries = 0;
-      this.reconnectAttempts = 0;
-      const userInfo = this.sock.user;
-      this.logger.info('✅ Successfully connected to WhatsApp!', {
-        user: userInfo?.name || userInfo?.id,
-        id: userInfo?.id
-      });
-
-      console.log('\n' + '🎉'.repeat(20));
-      console.log('🚀 WhatsApp Bot Connected Successfully!');
-      console.log(`📱 Connected as: ${userInfo?.name || 'Unknown'}`);
-      console.log(`🆔 Phone: ${userInfo?.id || 'Unknown'}`);
-      console.log('✅ Bot is now ready to receive messages!');
-      console.log('🎉'.repeat(20) + '\n');
-      this.emitConnectionEvent('connected', { user: userInfo });
-    } catch (error) {
-      this.logger.error('Error handling connection:', error);
-    }
-  }
-
+  // Enhanced disconnection handler with detailed error analysis
   async handleDisconnection(lastDisconnect) {
     this.isConnected = false;
     this.isConnecting = false;
-    const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+    this.currentQR = null;
+    
     const disconnectReason = lastDisconnect?.error?.output?.statusCode;
+    const errorMessage = lastDisconnect?.error?.message;
+    const shouldReconnect = disconnectReason !== DisconnectReason.loggedOut;
+    
+    console.log('\n' + '⚠️'.repeat(40));
+    console.log('📱 WHATSAPP DISCONNECTION ANALYSIS');
+    console.log('='.repeat(80));
+    console.log('🔌 Status: DISCONNECTED');
+    console.log('❗ Reason Code:', disconnectReason || 'undefined');
+    console.log('❗ Reason Text:', this.getDisconnectReasonText(disconnectReason));
+    console.log('📝 Error Message:', errorMessage || 'No error message');
+    console.log('🔄 Should Reconnect:', shouldReconnect);
+    console.log('⏰ Disconnected at:', new Date().toLocaleString());
+    
+    // Enhanced error analysis
+    if (disconnectReason === undefined) {
+      console.log('\n🔍 UNDEFINED DISCONNECT ANALYSIS:');
+      console.log('│  This usually indicates one of these issues:');
+      console.log('├─ 1. No WhatsApp session exists (need to scan QR)');
+      console.log('├─ 2. Invalid/expired authentication credentials');
+      console.log('├─ 3. WhatsApp Web version incompatibility');
+      console.log('├─ 4. Network connectivity issues');
+      console.log('├─ 5. Cloud platform restrictions (IP/firewall)');
+      console.log('└─ 6. WhatsApp rate limiting or temporary ban');
+      
+      console.log('\n💡 SUGGESTED SOLUTIONS:');
+      console.log('├─ 1. Wait for QR code to appear and scan it');
+      console.log('├─ 2. Clear database auth state and restart');
+      console.log('├─ 3. Check if WhatsApp Web works from same IP');
+      console.log('└─ 4. Try again in a few minutes');
+    }
+    
+    console.log('='.repeat(80));
+    console.log('⚠️'.repeat(40) + '\n');
+
     this.logger.info('🔌 Disconnected from WhatsApp', {
       reason: this.getDisconnectReasonText(disconnectReason),
-      shouldReconnect
+      reasonCode: disconnectReason,
+      errorMessage: errorMessage,
+      shouldReconnect,
+      platform: process.env.RENDER ? 'Render' : 'Local'
     });
 
     this.emitConnectionEvent('disconnected', {
       reason: disconnectReason,
-      shouldReconnect
+      reasonText: this.getDisconnectReasonText(disconnectReason),
+      errorMessage: errorMessage,
+      shouldReconnect,
+      timestamp: new Date().toISOString()
     });
 
     if (shouldReconnect) {
+      console.log('🔄 Scheduling reconnection attempt...');
       await this.attemptReconnection();
     } else {
-      this.logger.warn('❌ Logged out from WhatsApp. Please restart the bot to reconnect.');
-      console.log('\n' + '⚠️'.repeat(20));
-      console.log('🚪 You have been logged out of WhatsApp');
-      console.log('🔄 Please restart the bot to reconnect');
-      console.log('📱 You may need to scan the QR code again');
-      console.log('⚠️'.repeat(20) + '\n');
+      console.log('🚪 LOGGED OUT - Manual restart required');
+      console.log('📱 You will need to scan QR code again');
     }
   }
 
+  // Enhanced reconnection with exponential backoff
   async attemptReconnection() {
     if (this.reconnectAttempts >= this.config.whatsapp.maxReconnectAttempts) {
       this.logger.error('❌ Maximum reconnection attempts exceeded');
+      console.log('❌ Maximum reconnection attempts reached. Manual restart required.');
       return;
     }
 
     this.reconnectAttempts++;
-    const delay = this.config.whatsapp.reconnectIntervalMs * this.reconnectAttempts;
+    const delay = Math.min(
+      this.config.whatsapp.reconnectIntervalMs * Math.pow(2, this.reconnectAttempts - 1),
+      30000 // Max 30 seconds
+    );
 
+    console.log(`🔄 Reconnection attempt ${this.reconnectAttempts}/${this.config.whatsapp.maxReconnectAttempts}`);
+    console.log(`⏰ Waiting ${delay}ms before reconnecting...`);
+    
     this.logger.info(`🔄 Attempting to reconnect (${this.reconnectAttempts}/${this.config.whatsapp.maxReconnectAttempts}) in ${delay}ms...`);
+    
     setTimeout(async () => {
       try {
+        console.log('🔄 Starting reconnection...');
         await this.connect();
       } catch (error) {
+        console.error('❌ Reconnection failed:', error.message);
         this.logger.error('Reconnection failed:', error);
         await this.attemptReconnection();
       }
     }, delay);
+  }
+
+  // Enhanced disconnect reason mapping
+  getDisconnectReasonText(reason) {
+    const reasons = {
+      [DisconnectReason.badSession]: 'Bad Session File (corrupted auth)',
+      [DisconnectReason.connectionClosed]: 'Connection Closed (network issue)',
+      [DisconnectReason.connectionLost]: 'Connection Lost (network timeout)',
+      [DisconnectReason.connectionReplaced]: 'Connection Replaced (logged in elsewhere)',
+      [DisconnectReason.loggedOut]: 'Logged Out (manual logout or ban)',
+      [DisconnectReason.restartRequired]: 'Restart Required (WhatsApp update)',
+      [DisconnectReason.timedOut]: 'Connection Timed Out (network slow)',
+      [DisconnectReason.multideviceMismatch]: 'Multi-device Mismatch (version conflict)'
+    };
+    
+    if (reason === undefined) {
+      return 'Unknown - No Auth Session (need to scan QR)';
+    }
+    
+    return reasons[reason] || `Unknown Code (${reason})`;
+  }
+
+  // Add method to clear auth state for testing
+  async clearAuthState() {
+    if (pool) {
+      try {
+        const client = await pool.connect();
+        await client.query('DELETE FROM whatsapp_auth_creds');
+        client.release();
+        console.log('✅ Cleared database auth state');
+      } catch (error) {
+        console.error('❌ Failed to clear auth state:', error.message);
+      }
+    }
   }
 
   async handleMessages(messageUpdate) {
