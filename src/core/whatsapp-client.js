@@ -122,16 +122,25 @@ export class WhatsAppClient {
       const { version, isLatest } = await fetchLatestBaileysVersion();
       this.logger.info(`📱 Using WhatsApp Web v${version.join('.')}, isLatest: ${isLatest}`);
 
-      // 🟡 MODIFIED: Use the custom database authentication state handler
-      const { state, saveCreds } = await useDatabaseAuthState();
+      // Try database auth state, fallback to memory
+      let authState, saveCreds;
+      try {
+        ({ state: authState, saveCreds } = await useDatabaseAuthState());
+        this.logger.info('✅ Using database for WhatsApp authentication state');
+      } catch (error) {
+        this.logger.warn('⚠️ Database auth failed, using memory-only state:', error.message);
+        // Fallback to memory-only auth state
+        authState = { creds: {}, keys: { get: async () => ({}), set: async () => {} } };
+        saveCreds = () => Promise.resolve();
+      }
 
       this.sock = makeWASocket({
         version,
         logger: this.createBaileysLogger(),
         printQRInTerminal: false,
         auth: {
-          creds: state.creds,
-          keys: makeCacheableSignalKeyStore(state.keys, this.createBaileysLogger())
+          creds: authState.creds,
+          keys: makeCacheableSignalKeyStore(authState.keys, this.createBaileysLogger())
         },
         browser: Browsers.ubuntu("Chrome"),
         connectTimeoutMs: this.config.whatsapp.connectTimeoutMs,
