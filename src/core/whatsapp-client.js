@@ -102,6 +102,171 @@ export class WhatsAppClient {
     this.reconnectAttempts = 0;
     this.connectionEventHandlers = new Map();
     this.messageHandlers = new Set();
+    this.currentQR = null; // Store current QR for web display
+  }
+
+  // Enhanced QR handling for cloud deployment
+  async handleQRCode(qr) {
+    this.qrRetries++;
+    this.currentQR = qr; // Store for web endpoint
+    
+    this.logger.bot.qrCode(this.qrRetries, this.config.whatsapp.qrMaxRetries);
+
+    if (this.qrRetries > this.config.whatsapp.qrMaxRetries) {
+      this.logger.error('❌ Maximum QR retries exceeded');
+      this.disconnect();
+      return;
+    }
+
+    // Enhanced QR display for cloud deployments
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qr)}`;
+    
+    console.log('\n' + '='.repeat(80));
+    console.log('📱 WHATSAPP QR CODE - CLOUD DEPLOYMENT');
+    console.log('='.repeat(80));
+    console.log('🌐 SCAN THIS QR CODE TO CONNECT YOUR WHATSAPP:');
+    console.log('');
+    console.log('🔗 QR Code URL (copy and paste in browser):');
+    console.log(`👉 ${qrUrl}`);
+    console.log('');
+    console.log('📋 Instructions:');
+    console.log('1. Copy the URL above');
+    console.log('2. Paste it in your browser');
+    console.log('3. Open WhatsApp on your phone');
+    console.log('4. Go to Settings > Linked Devices');
+    console.log('5. Tap "Link a Device"');
+    console.log('6. Scan the QR code from your browser');
+    console.log('');
+    console.log(`⏱️  QR Code attempt: ${this.qrRetries}/${this.config.whatsapp.qrMaxRetries}`);
+    console.log(`⏰ This QR code expires in ~20 seconds`);
+    console.log('🔄 New QR code will be generated automatically');
+    console.log('='.repeat(80) + '\n');
+
+    // Emit QR event for web interface (if you have one)
+    this.emitConnectionEvent('qr', { 
+      qr, 
+      qrUrl,
+      attempt: this.qrRetries, 
+      maxAttempts: this.config.whatsapp.qrMaxRetries,
+      expiresIn: 20000 // 20 seconds
+    });
+  }
+
+  // Enhanced connection handler with better logging
+  async handleConnection() {
+    try {
+      this.isConnected = true;
+      this.isConnecting = false;
+      this.qrRetries = 0;
+      this.reconnectAttempts = 0;
+      this.currentQR = null; // Clear QR code
+      
+      const userInfo = this.sock.user;
+      this.logger.info('✅ Successfully connected to WhatsApp!', {
+        user: userInfo?.name || userInfo?.id,
+        id: userInfo?.id
+      });
+
+      // Enhanced success display for cloud deployment
+      console.log('\n' + '🎉'.repeat(40));
+      console.log('🚀 WHATSAPP BOT CONNECTED SUCCESSFULLY! 🚀');
+      console.log('='.repeat(80));
+      console.log(`📱 Connected as: ${userInfo?.name || 'Unknown'}`);
+      console.log(`🆔 Phone Number: ${userInfo?.id || 'Unknown'}`);
+      console.log(`🌐 Platform: ${process.env.RENDER ? 'Render Cloud' : 'Local'}`);
+      console.log(`⏰ Connected at: ${new Date().toLocaleString()}`);
+      console.log('✅ Bot is now ready to receive messages!');
+      console.log('📝 Authentication saved to database');
+      console.log('🔄 Bot will auto-reconnect if connection drops');
+      console.log('='.repeat(80));
+      console.log('🎉'.repeat(40) + '\n');
+      
+      this.emitConnectionEvent('connected', { user: userInfo });
+      
+      // Save successful connection to database immediately
+      if (this.sock.authState) {
+        this.logger.info('💾 Saving authentication state to database...');
+      }
+      
+    } catch (error) {
+      this.logger.error('Error handling connection:', error);
+    }
+  }
+
+  // Enhanced disconnection handler with better diagnostics
+  async handleDisconnection(lastDisconnect) {
+    this.isConnected = false;
+    this.isConnecting = false;
+    this.currentQR = null;
+    
+    const disconnectReason = lastDisconnect?.error?.output?.statusCode;
+    const shouldReconnect = disconnectReason !== DisconnectReason.loggedOut;
+    
+    // Enhanced logging for cloud deployment debugging
+    this.logger.info('🔌 WhatsApp Disconnected', {
+      reason: this.getDisconnectReasonText(disconnectReason),
+      reasonCode: disconnectReason,
+      shouldReconnect,
+      lastDisconnectError: lastDisconnect?.error?.message,
+      platform: process.env.RENDER ? 'Render' : 'Local'
+    });
+
+    // Better disconnect reason handling
+    console.log('\n' + '⚠️'.repeat(40));
+    console.log('📱 WHATSAPP CONNECTION STATUS');
+    console.log('='.repeat(80));
+    console.log(`🔌 Status: DISCONNECTED`);
+    console.log(`❗ Reason: ${this.getDisconnectReasonText(disconnectReason)}`);
+    console.log(`🔢 Reason Code: ${disconnectReason || 'undefined'}`);
+    console.log(`🔄 Will Reconnect: ${shouldReconnect ? 'YES' : 'NO'}`);
+    
+    if (lastDisconnect?.error?.message) {
+      console.log(`📋 Error Details: ${lastDisconnect.error.message}`);
+    }
+    
+    console.log(`⏰ Disconnected at: ${new Date().toLocaleString()}`);
+    console.log('='.repeat(80));
+
+    this.emitConnectionEvent('disconnected', {
+      reason: disconnectReason,
+      reasonText: this.getDisconnectReasonText(disconnectReason),
+      shouldReconnect,
+      timestamp: new Date().toISOString()
+    });
+
+    if (shouldReconnect) {
+      console.log('🔄 Attempting to reconnect...');
+      await this.attemptReconnection();
+    } else {
+      console.log('🚪 LOGGED OUT - Manual restart required');
+      console.log('📱 You may need to scan QR code again');
+      console.log('⚠️'.repeat(40) + '\n');
+    }
+  }
+
+  // Get current QR code for web interface
+  getCurrentQR() {
+    return this.currentQR ? {
+      qr: this.currentQR,
+      qrUrl: `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(this.currentQR)}`,
+      attempt: this.qrRetries,
+      maxAttempts: this.config.whatsapp.qrMaxRetries,
+      timestamp: Date.now()
+    } : null;
+  }
+
+  // Enhanced status method
+  getStatus() {
+    return {
+      connected: this.isConnected,
+      connecting: this.isConnecting,
+      qrRetries: this.qrRetries,
+      reconnectAttempts: this.reconnectAttempts,
+      user: this.sock?.user || null,
+      hasQR: !!this.currentQR,
+      platform: process.env.RENDER ? 'render' : 'local',
+      lastUpdate: new Date().toISOString()
+    };
   }
 
   async connect() {
