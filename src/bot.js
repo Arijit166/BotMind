@@ -123,7 +123,10 @@ export class Bot {
 
             this.logger.info('🚀 Starting WhatsApp Bot...');
 
-            // The WhatsApp client will set up its own event handlers upon connection.
+            // Set up event handlers BEFORE connecting
+            this.setupWhatsAppEventHandlers();
+
+            // Now connect to WhatsApp
             await this.whatsappClient.connect();
 
             this.isRunning = true;
@@ -188,6 +191,8 @@ export class Bot {
             this.logger.error('WhatsApp client not initialized');
             return;
         }
+
+        this.logger.debug('Setting up WhatsApp event handlers...');
 
         // Connection events
         const connectionHandler = this.whatsappClient.onConnectionEvent('connected', (data) => {
@@ -367,6 +372,9 @@ Type */help* for available commands.`;
             errors.push('BOT_OWNER_NUMBER is required');
         }
 
+        if (!process.env.DATABASE_URL) {
+            errors.push('DATABASE_URL is required for session storage');
+        }
         // Validate Gemini API key format (basic check)
         if (config.gemini.apiKey && !config.gemini.apiKey.startsWith('AIza')) {
             this.logger.warn('⚠️ Gemini API key format looks unusual - please verify it\'s correct');

@@ -26,7 +26,6 @@ export function getConfig() {
     },
 
     whatsapp: {
-      sessionPath: process.env.SESSION_PATH || './sessions',
       printQRInTerminal: true,
       defaultProtocolVersion: [2, 3000, 1015901307],
       connectTimeoutMs: 60000,
