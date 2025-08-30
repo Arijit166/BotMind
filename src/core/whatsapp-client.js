@@ -61,6 +61,8 @@ async function useDatabaseAuthState() {
         
         testClient.release();
 
+        // Complete fix for the credential handling functions
+
         const readCreds = async (id) => {
             const client = await pool.connect();
             try {
@@ -90,22 +92,13 @@ async function useDatabaseAuthState() {
             
             const client = await pool.connect();
             try {
-                let processedValue;
-                if (typeof value === 'string') {
-                    processedValue = value;
-                } else {
-                    try {
-                        processedValue = JSON.stringify(value);
-                    } catch (error) {
-                        console.warn(`DB: Failed to stringify value for key ${id}:`, error.message);
-                        return;
-                    }
-                }
-                
+                // For JSONB column, PostgreSQL handles object serialization automatically
                 const query = `INSERT INTO whatsapp_auth_creds (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value = $2;`;
-                await client.query(query, [id, processedValue]);
+                await client.query(query, [id, value]);
+                console.log(`DB: Successfully wrote credentials for ${id}`);
             } catch (error) {
                 console.error(`DB: Error writing credentials for ${id}:`, error.message);
+                console.error('DB: Value type:', typeof value, 'Value:', value);
             } finally {
                 client.release();
             }
@@ -124,11 +117,23 @@ async function useDatabaseAuthState() {
                 } else {
                     console.log('DB: Found existing credentials in database');
                     const creds = res.rows[0].value;
-                    const hasValidSession = !!(creds.me || creds.signedIdentityKey?.public || creds.registrationId);
+                    
+                    // More comprehensive validation
+                    const hasValidSession = !!(
+                        creds && 
+                        typeof creds === 'object' &&
+                        creds.registrationId &&
+                        creds.identityId &&
+                        creds.signedIdentityKey?.public &&
+                        creds.signedPreKey?.keyPair
+                    );
+                    
                     console.log('DB: Session validity check:', {
-                        hasMe: !!creds.me,
-                        hasIdentityKey: !!creds.signedIdentityKey?.public,
-                        hasRegistrationId: !!creds.registrationId,
+                        hasMe: !!creds?.me,
+                        hasIdentityKey: !!creds?.signedIdentityKey?.public,
+                        hasRegistrationId: !!creds?.registrationId,
+                        hasIdentityId: !!creds?.identityId,
+                        hasSignedPreKey: !!creds?.signedPreKey?.keyPair,
                         hasValidSession
                     });
                     
@@ -136,7 +141,9 @@ async function useDatabaseAuthState() {
                         console.log('DB: Using existing valid session');
                         return creds;
                     } else {
-                        console.log('DB: Existing credentials incomplete, creating fresh ones');
+                        console.log('DB: Existing credentials incomplete, clearing and creating fresh ones');
+                        // Clear the corrupted session
+                        await client.query('DELETE FROM whatsapp_auth_creds');
                         const freshCreds = initAuthCreds();
                         await writeCreds('creds', freshCreds);
                         return freshCreds;
