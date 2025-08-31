@@ -275,6 +275,11 @@ export class WhatsAppClient {
       if (type !== 'notify') return;
 
       for (const message of messages) {
+        // Add this new check to ignore deleted messages
+        if (message.messageStubType === 'REVOKE') {
+            this.logger.debug('Ignoring revoked (deleted for everyone) message', { messageId: message.key.id });
+            continue;
+        }
         // 🟢 ADDED: Skip message if it is a reaction
         if (message.message?.reactionMessage) {
           this.logger.debug('Skipping message as it is a reaction', { messageId: message.key.id });

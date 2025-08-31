@@ -289,53 +289,59 @@ export class Bot {
     /**
      * Handle incoming messages
      */
-    async handleIncomingMessage(message) {
-        try {
-            // Skip if bot is shutting down
-            if (this.isShuttingDown) {
-                return;
-            }
+    async handleIncomingMessage(message) {
+        try {
+            // ⭐ NEW: Add an early check for message body and fromMe property
+            if (message.key.fromMe || !message.message) {
+                this.logger.debug('Ignoring empty or self-sent message', { messageId: message.key.id });
+                return;
+            }
 
-            // Get chat and contact information
-            const chat = await this.whatsappClient.getChat(message.key.remoteJid);
-            const contact = await this.whatsappClient.getContact(message.key.participant || message.key.remoteJid);
+            // Get chat and contact information
+            const chat = await this.whatsappClient.getChat(message.key.remoteJid);
+            const contact = await this.whatsappClient.getContact(message.key.participant || message.key.remoteJid);
 
-            // Convert Baileys message format to our internal format
-            const internalMessage = {
-                id: { _serialized: message.key.id },
-                body: message.message?.conversation || 
-                    message.message?.extendedTextMessage?.text || 
-                    message.message?.imageMessage?.caption ||
-                    message.message?.videoMessage?.caption ||
-                    '',
-                from: message.key.remoteJid,
-                fromMe: message.key.fromMe,
-                timestamp: message.messageTimestamp,
-                type: this.getMessageType(message),
-                hasMedia: this.hasMedia(message),
-                hasQuotedMsg: !!message.message?.extendedTextMessage?.contextInfo?.quotedMessage,
-                mentionedIds: message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [],
-                reply: async (content) => {
-                    return await this.whatsappClient.sendMessage(message.key.remoteJid, content);
-                }
-            };
-            
-            // Route to appropriate handler
-            if (chat.isGroup) {
-                await this.groupHandler.handleMessage(internalMessage, chat, contact);
-            } else {
-                await this.messageHandler.handleMessage(internalMessage, chat, contact);
-            }
+            // Convert Baileys message format to our internal format
+            const internalMessage = {
+                id: { _serialized: message.key.id },
+                body: message.message?.conversation ||
+                    message.message?.extendedTextMessage?.text ||
+                    message.message?.imageMessage?.caption ||
+                    message.message?.videoMessage?.caption ||
+                    '',
+                from: message.key.remoteJid,
+                fromMe: message.key.fromMe,
+                timestamp: message.messageTimestamp,
+                type: this.getMessageType(message),
+                hasMedia: this.hasMedia(message),
+                hasQuotedMsg: !!message.message?.extendedTextMessage?.contextInfo?.quotedMessage,
+                mentionedIds: message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [],
+                reply: async (content) => {
+                    return await this.whatsappClient.sendMessage(message.key.remoteJid, content);
+                }
+            };
 
-        } catch (error) {
-            this.logger.error('Error handling incoming message:', {
-                error: error.message,
-                messageId: message.key?.id,
-                from: message.key?.remoteJid
-            });
-        }
-    }
+            // Ensure the message body is not empty after conversion
+            if (!internalMessage.body.trim() && !internalMessage.hasMedia) {
+                this.logger.debug('Ignoring message with no text or media after conversion.', { messageId: message.key.id });
+                return;
+            }
+            
+            // Route to appropriate handler
+            if (chat.isGroup) {
+                await this.groupHandler.handleMessage(internalMessage, chat, contact);
+            } else {
+                await this.messageHandler.handleMessage(internalMessage, chat, contact);
+            }
 
+        } catch (error) {
+            this.logger.error('Error handling incoming message:', {
+                error: error.message,
+                messageId: message.key?.id,
+                from: message.key?.remoteJid
+            });
+        }
+    }
     /**
      * Send startup notification to owner
      */
